@@ -1,4 +1,4 @@
--- WinDbg dissector
+-- KD over UDP network dissector
 -- Run with: tshark -X lua_script:kdnet.lua
 
 kdnet_proto = Proto("kdnet", "Windows Kernel Debugger over Network")
@@ -33,50 +33,17 @@ Full, smaller run (windbg-uncut):
     427 0x00000001      192.168.2.72
 --]]--
 add_field(ProtoField.uint8, "type",     "Type", base.HEX)
---[[Found these remaining lengths (count, remaining length in hex):
-  57837 0x30
-  48514 0x40
-   7990 0x50
-    577 0x60
-     82 0x70
-    106 0x80
-      8 0x90
-    200 0xa0
-      3 0xc0
-      4 0xe0
-     38 0x120
-    105 0x140
-     51 0x160
-     69 0x170
-     51 0x180
-     35 0x290
-      8 0x300
-     36 0x530
-     35 0x5b0
-Full, smaller run (windbg-uncut):
-    264 0x30
-    134 0x60
-     40 0x70
-     13 0xa0
-     12 0xb0
-     13 0xc0
-     31 0xe0
-      2 0x120
-      5 0x140
-      3 0x160
-    427 0x170
-      7 0x530
-]]--
 add_field(ProtoField.bytes, "data",     "Encrypted data")
 add_field(ProtoField.bytes, "data_dec", "Decrypted data")
 kdnet_proto.fields = hf
 
 kdnet_proto.prefs.key = Pref.string("Decryption key", "",
-    "A 256-bit decryption key formatted as w.x.y.z (components are in base-36(")
+    "A 256-bit decryption key formatted as w.x.y.z (components are in base-36)")
 
 -----
 -- Decryption routine (based on lua-lockbox, don't worry about timing attacks as
--- the data is not considered confidential.
+-- the data is not considered confidential.)
+-- TODO replace by something faster...
 -----
 -- For other locations, use: LUA_PATH=.../lua-lockbox/?.lua
 package.path = package.path .. ";/home/peter/projects/kdnet/lua-lockbox/?.lua"
@@ -153,9 +120,11 @@ function kdnet_proto.dissector(tvb, pinfo, tree)
     -- subtree:add(hf.count, tvb(6, 2))
     -- subtree:add(hf.id, tvb(8, 4))
     -- subtree:add(hf.checksum, tvb(12, 4))
+    return tvb:len()
 end
 
 local udp_table = DissectorTable.get("udp.port")
-udp_table:add(51111, kdnet_proto)
+--udp_table:add(51111, kdnet_proto)
+kdnet_proto:register_heuristic("udp", kdnet_proto.dissector)
 
 -- vim: set sw=4 ts=4 et:
