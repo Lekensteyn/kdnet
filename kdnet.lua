@@ -35,6 +35,21 @@ Full, smaller run (windbg-uncut):
 add_field(ProtoField.uint8, "type",     "Type", base.HEX)
 add_field(ProtoField.bytes, "data",     "Encrypted data")
 add_field(ProtoField.bytes, "data_dec", "Decrypted data")
+
+-- contents of encrypted blocks --
+add_field(ProtoField.bytes,  "field1",  "Zeroes")
+add_field(ProtoField.uint16, "uptime",  "Uptime", base.DEC)
+add_field(ProtoField.bytes,  "field2",  "Unknown")
+add_field(ProtoField.bytes,  "field3",  "Unknown (begin key material)")
+add_field(ProtoField.uint16, "seqno",   "Seq no", base.HEX_DEC)
+add_field(ProtoField.bytes,  "random",  "Random")
+add_field(ProtoField.ipv6,   "src_addr", "Source Addr")
+add_field(ProtoField.uint16, "src_port", "Source Port", base.DEC)
+add_field(ProtoField.ipv6,   "dst_addr", "Dest   Addr")
+add_field(ProtoField.uint16, "dst_port", "Dest   Port", base.DEC)
+add_field(ProtoField.ipv6,   "unk_addr", "Unknwn Addr")
+add_field(ProtoField.uint16, "unk_port", "Unknwn Port", base.DEC)
+add_field(ProtoField.bytes,  "padding",  "Padding")
 kdnet_proto.fields = hf
 
 kdnet_proto.prefs.key = Pref.string("Decryption key", "",
@@ -51,6 +66,7 @@ package.path = package.path .. ";lua-lockbox/?.lua"
 local Lockbox = require("lockbox");
 Lockbox.ALLOW_INSECURE = true;
 local Array = require("lockbox.util.array");
+local SHA256Digest = require("lockbox.digest.sha2_256");
 local CBCMode = require("lockbox.cipher.mode.cbc");
 local AES256Cipher = require("lockbox.cipher.aes256");
 local ZeroPadding = require("lockbox.padding.zero");
@@ -88,7 +104,54 @@ function dotted_key(s)
     assert(string.len(key) == 32, "Invalid key format")
     return key
 end
+function data_key(initial_key, decrypted_data)
+    -- key for Debugger -> Debuggee data flows
+    local blob = string.sub(decrypted_data, 8+1, 8+322)
+    local key = SHA256Digest()
+        .update(Stream.fromString(initial_key))
+        .update(Stream.fromString(blob))
+        .finish()
+        .asBytes()
+    key = Array.toString(key)
+    assert(string.len(key) == 32, "Invalid key format")
+    return key
+end
 ----
+
+-- XXX this currently assumes that only a single debugging session is ever
+-- present in a packet capture... perhaps it should look at the frame number?
+local single_key
+function kdnet_stored_key(pinfo, new_key)
+    if new_key then
+        single_key = new_key
+    else
+        return single_key
+    end
+end
+
+function dissect_kdnet_data(tvb, pinfo, pkt_type, tree)
+    if tvb:raw(0, 5) ~= '\0\0\0\0\0' then
+        return
+    end
+    if pkt_type == 0x01 then
+        dissect_kdnet_init_data(tvb, pinfo, tree)
+    end
+end
+function dissect_kdnet_init_data(tvb, pinfo, tree)
+    tree:add(hf.field1, tvb(0, 5))
+    tree:add(hf.uptime, tvb(5, 2))
+    tree:add(hf.field2, tvb(7, 2))
+    tree:add(hf.field3, tvb(9, 1))
+    tree:add(hf.seqno, tvb(10, 2))
+    tree:add(hf.random, tvb(12, 30))
+    tree:add(hf.src_addr, tvb(42, 16))
+    tree:add(hf.src_port, tvb(58, 2))
+    tree:add(hf.dst_addr, tvb(60, 16))
+    tree:add(hf.dst_port, tvb(76, 2))
+    tree:add(hf.unk_addr, tvb(78, 16))
+    tree:add(hf.unk_port, tvb(90, 2))
+    tree:add(hf.padding, tvb(92))
+end
 
 function kdnet_proto.dissector(tvb, pinfo, tree)
     -- Ignore packets not starting with "MDBG"
@@ -106,12 +169,23 @@ function kdnet_proto.dissector(tvb, pinfo, tree)
     subtree:add(hf.version, tvb(4, 1))
     subtree:add(hf.type, tvb(5, 1))
     subtree:add(hf.data, tvb(6))
+    local pkt_type = tvb(5, 1):uint()
+
+    if pkt_type == 0x00 then
+        decryption_key = kdnet_stored_key(pinfo)
+    end
+
     if decryption_key then
         local enc_data = tvb:raw(6)
         local decrypted_bytes = decrypt(decryption_key, enc_data)
+        if pkt_type == 0x01 then
+            local key = data_key(decryption_key, decrypted_bytes)
+            kdnet_stored_key(pinfo, key)
+        end
         local dec_data = ByteArray.new(decrypted_bytes, true)
             :tvb("Decrypted KDNET data")
-        subtree:add(hf.data_dec, dec_data())
+        local subtree_dec = subtree:add(hf.data_dec, dec_data())
+        dissect_kdnet_data(dec_data, pinfo, pkt_type, subtree_dec)
     end
 
     -- pinfo.cols.protocol = "KD"

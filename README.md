@@ -5,7 +5,7 @@ Work in progress on reverse-engineering the Windows Kernel Debugger protocol
 learning, expect incomplete analysis.
 
 ## kdnet.lua
-A KDNET Wireshark dissector (tested with Wireshark 2.0.1). Decryption is
+A KDNET Wireshark dissector. Decryption is
 currently supported through the [lua-lockbox][2] library which is *slow* but
 easy to install (pure LUA code, no native code). To make use of it, clone
 https://github.com/somesocks/lua-lockbox into this repository.
@@ -22,6 +22,8 @@ Similarly, for Wireshark GUI:
 
     wireshark -Xlua_script:kdnet.lua -okdnet.key:8.8.8.8 \
         -r pcaps/windbg-uncut.pcapng.gz
+
+Rewuires Wireshark 2.0.2 (or newer) to fix a [use-after-free bug][3].
 
 ## Configuring for debugging
 In WinDbg terminology, the *target* is the machine that is being debugged, the
@@ -55,3 +57,4 @@ generated using these settings.
 
  [1]: https://msdn.microsoft.com/library/windows/hardware/hh439346%28v=vs.85%29.aspx
  [2]: https://github.com/somesocks/lua-lockbox
+ [3]: https://bugs.wireshark.org/bugzilla/show_bug.cgi?id=12050
