@@ -5,10 +5,8 @@ Work in progress on reverse-engineering the Windows Kernel Debugger protocol
 learning, expect incomplete analysis.
 
 ## kdnet.lua
-A KDNET Wireshark dissector. Decryption is
-currently supported through the [lua-lockbox][2] library which is *slow* but
-easy to install (pure LUA code, no native code). To make use of it, clone
-https://github.com/somesocks/lua-lockbox into this repository.
+A KDNET Wireshark dissector. Decryption is supported through the [luagcrypt][2]
+library which uses libgcrypt under the hood.
 
 A single encryption key must be configured first or else the decrypted contents
 are not available.

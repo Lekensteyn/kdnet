@@ -56,35 +56,17 @@ kdnet_proto.prefs.key = Pref.string("Decryption key", "",
     "A 256-bit decryption key formatted as w.x.y.z (components are in base-36)")
 
 -----
--- Decryption routine (based on lua-lockbox, don't worry about timing attacks as
--- the data is not considered confidential.)
--- TODO replace by something faster...
+-- Decryption routine.
 -----
--- For other locations, use: LUA_PATH=.../lua-lockbox/?.lua
-package.path = package.path .. ";/home/peter/projects/kdnet/lua-lockbox/?.lua"
-package.path = package.path .. ";lua-lockbox/?.lua"
-local Lockbox = require("lockbox");
-Lockbox.ALLOW_INSECURE = true;
-local Array = require("lockbox.util.array");
-local SHA256Digest = require("lockbox.digest.sha2_256");
-local CBCMode = require("lockbox.cipher.mode.cbc");
-local AES256Cipher = require("lockbox.cipher.aes256");
-local ZeroPadding = require("lockbox.padding.zero");
-local Stream = require("lockbox.util.stream");
+-- For other locations, use: LUA_CPATH=.../luagcrypt/?.so
+local gcrypt = require("luagcrypt")
 function decrypt(key, data)
     local iv = string.sub(data, -16)
     local ciphertext = string.sub(data, 1, -17)
-    local cipher = CBCMode.Decipher()
-        .setKey(Array.fromString(key))
-        .setBlockCipher(AES256Cipher)
-        .setPadding(ZeroPadding);
-    local decrypted_bytes = cipher
-        .init()
-        .update(Stream.fromString(iv))
-        .update(Stream.fromString(ciphertext))
-        .finish()
-        .asBytes();
-    return Array.toString(decrypted_bytes)
+    local cipher = gcrypt.Cipher(gcrypt.CIPHER_AES256, gcrypt.CIPHER_MODE_CBC)
+    cipher:setkey(key)
+    cipher:setiv(iv)
+    return cipher:decrypt(ciphertext)
 end
 -----
 -- Key preparation
@@ -107,12 +89,10 @@ end
 function data_key(initial_key, decrypted_data)
     -- key for Debugger -> Debuggee data flows
     local blob = string.sub(decrypted_data, 8+1, 8+322)
-    local key = SHA256Digest()
-        .update(Stream.fromString(initial_key))
-        .update(Stream.fromString(blob))
-        .finish()
-        .asBytes()
-    key = Array.toString(key)
+    local md = gcrypt.Hash(gcrypt.MD_SHA256)
+    md:write(initial_key)
+    md:write(blob)
+    local key = md:read()
     assert(string.len(key) == 32, "Invalid key format")
     return key
 end
