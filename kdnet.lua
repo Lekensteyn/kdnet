@@ -98,14 +98,20 @@ function data_key(initial_key, decrypted_data)
 end
 ----
 
--- XXX this currently assumes that only a single debugging session is ever
--- present in a packet capture... perhaps it should look at the frame number?
-local single_key
+local session_keys = {}
 function kdnet_stored_key(pinfo, new_key)
     if new_key then
-        single_key = new_key
+        session_keys[pinfo.number] = new_key
     else
-        return single_key
+        -- Use the most recent key relatively to the current packet
+        local i_highest = -1, key
+        for i, v in pairs(session_keys) do
+            if i_highest < i and i < pinfo.number then
+                i_highest = i
+                key = v
+            end
+        end
+        return key
     end
 end
 
@@ -175,6 +181,11 @@ function kdnet_proto.dissector(tvb, pinfo, tree)
     -- subtree:add(hf.id, tvb(8, 4))
     -- subtree:add(hf.checksum, tvb(12, 4))
     return tvb:len()
+end
+
+function kdnet_proto.init()
+    -- Reset session keys between captures
+    session_keys = {}
 end
 
 local udp_table = DissectorTable.get("udp.port")
