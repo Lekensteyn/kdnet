@@ -155,15 +155,15 @@ function dissect_kdnet_data(tvb, pinfo, pkt_type, tree)
     end
 end
 
-function dissect_kd_header(tvb, pinfo, tree, offset)
-    tree:add(hf.signature, tvb(offset, 4))
-    tree:add_le(hf.packet_type, tvb(offset + 4, 2))
-    tree:add_le(hf.total_data_length, tvb(offset + 6, 2))
-    tree:add_le(hf.packet_id, tvb(offset + 8, 4))
-    tree:add_le(hf.checksum, tvb(offset + 12, 4))
-    local datalen = tvb(offset + 6, 2):le_uint()
+function dissect_kd_header(tvb, pinfo, tree)
+    tree:add(hf.signature, tvb(0, 4))
+    tree:add_le(hf.packet_type, tvb(4, 2))
+    tree:add_le(hf.total_data_length, tvb(6, 2))
+    tree:add_le(hf.packet_id, tvb(8, 4))
+    tree:add_le(hf.checksum, tvb(12, 4))
+    local datalen = tvb(6, 2):le_uint()
     if datalen > 0 then
-        tree:add(hf.kd_data, tvb(offset + 16, datalen))
+        tree:add(hf.kd_data, tvb(16, datalen))
     end
 end
 
@@ -172,7 +172,7 @@ function dissect_kdnet_0x00_data(tvb, pinfo, tree)
     tree:add(hf.seqno, tvb(5, 2))
     -- if tag & 0x80, then direction debugger -> debuggee
     tree:add(hf.tag, tvb(7, 1))
-    dissect_kd_header(tvb, pinfo, tree, 8)
+    dissect_kd_header(tvb:range(8), pinfo, tree)
 end
 
 function dissect_kdnet_init_data(tvb, pinfo, tree)
