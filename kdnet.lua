@@ -40,8 +40,27 @@ add_field(ProtoField.bytes, "data_dec", "Decrypted data")
 -- for type=0x00
 add_field(ProtoField.uint8, "tag",      "Tag", base.HEX)
 -- _KD_PACKET_HEADER
-add_field(ProtoField.string, "signature", "Signature")
-add_field(ProtoField.uint16, "packet_type", "Packet Type", base.HEX_DEC)
+local signature_values = {
+    [0x62626262] = "Breakin",
+    [0x30303030] = "Data",
+    [0x69696969] = "Control",
+}
+local packet_type_values = {
+    [0] = "UNUSED",
+    [1] = "KD_STATE_CHANGE32",
+    [2] = "KD_STATE_MANIPULATE",
+    [3] = "KD_DEBUG_IO",
+    [4] = "KD_ACKNOWLEDGE",
+    [5] = "KD_RESEND",
+    [6] = "KD_RESET",
+    [7] = "KD_STATE_CHANGE64",
+    [8] = "KD_POLL_BREAKIN",
+    [9] = "KD_TRACE_IO",
+    [10] = "KD_CONTROL_REQUEST",
+    [11] = "KD_FILE_IO",
+}
+add_field(ProtoField.uint32, "signature", "Signature", base.HEX, signature_values)
+add_field(ProtoField.uint16, "packet_type", "Packet Type", base.HEX_DEC, packet_type_values)
 add_field(ProtoField.uint16, "total_data_length", "Total Data Length", base.DEC)
 add_field(ProtoField.uint32, "packet_id", "Packet ID", base.DEC)
 add_field(ProtoField.uint32, "checksum", "Checksum", base.HEX)
@@ -137,15 +156,7 @@ function dissect_kdnet_data(tvb, pinfo, pkt_type, tree)
 end
 
 function dissect_kd_header(tvb, pinfo, tree, offset)
-    local f_signature = tree:add(hf.signature, tvb(offset, 4))
-    local signature = tvb(offset, 4):string()
-    if signature == "0000" then
-        f_signature:append_text(" (Data packet)")
-    elseif signature == "iiii" then
-        f_signature:append_text(" (Control packet)")
-    else
-        f_signature:append_text(" (Unknown packet)")
-    end
+    tree:add(hf.signature, tvb(offset, 4))
     tree:add_le(hf.packet_type, tvb(offset + 4, 2))
     tree:add_le(hf.total_data_length, tvb(offset + 6, 2))
     tree:add_le(hf.packet_id, tvb(offset + 8, 4))
