@@ -4,9 +4,14 @@
 kdnet_proto = Proto("kdnet", "Windows Kernel Debugger over Network")
 
 local hf = {}
-function add_field(proto_field_constructor, name, ...)
+function add_field(proto_field_constructor, name, desc, ...)
     local field_name = "kdnet." .. name
-    hf[name] = proto_field_constructor(field_name, ...)
+    -- If the description is omitted, use the name as label
+    if type(desc) == "string" then
+        hf[name] = proto_field_constructor(field_name, desc, ...)
+    else
+        hf[name] = proto_field_constructor(field_name, name, desc, ...)
+    end
 end
 
 -- KD serial protocol?
@@ -115,19 +120,34 @@ local apinumber_values = {
     -- Debug I/O Types
     [0x00003230] = "DbgKdPrintStringApi",
     [0x00003231] = "DbgKdGetStringApi",
+    -- File I/O Types
+    [0x00003430] = "DbgKdCreateFileApi",
+    [0x00003431] = "DbgKdReadFileApi",
+    [0x00003432] = "DbgKdWriteFileApi",
+    [0x00003433] = "DbgKdCloseFileApi",
 }
 -- DBGKD Manipulate structure
-add_field(ProtoField.uint32, "ApiNumber", "ApiNumber", base.HEX, apinumber_values)
-add_field(ProtoField.uint16, "ProcessorLevel", "ProcessorLevel", base.HEX_DEC)
-add_field(ProtoField.uint16, "Processor", "Processor", base.HEX_DEC)
-add_field(ProtoField.uint32, "ReturnStatus", "ReturnStatus", base.HEX)
+add_field(ProtoField.uint32, "ApiNumber", base.HEX, apinumber_values)
+add_field(ProtoField.uint16, "ProcessorLevel", base.HEX_DEC)
+add_field(ProtoField.uint16, "Processor", base.HEX_DEC)
+add_field(ProtoField.uint32, "ReturnStatus", base.HEX)
 -- DBGKD Debug I/O structure
-add_field(ProtoField.uint32, "LengthOfString", "LengthOfString")
-add_field(ProtoField.uint32, "LengthOfPromptString", "LengthOfPromptString")
-add_field(ProtoField.uint32, "LengthOfStringRead", "LengthOfStringRead")
-add_field(ProtoField.string, "String", "String")
-add_field(ProtoField.string, "PromptString", "PromptString")
-add_field(ProtoField.string, "StringRead", "StringRead")
+add_field(ProtoField.uint32, "LengthOfString")
+add_field(ProtoField.uint32, "LengthOfPromptString")
+add_field(ProtoField.uint32, "LengthOfStringRead")
+add_field(ProtoField.string, "String")
+add_field(ProtoField.string, "PromptString")
+add_field(ProtoField.string, "StringRead")
+-- File I/O Structure
+add_field(ProtoField.uint32, "Status", base.HEX)
+add_field(ProtoField.uint32, "DesiredAccess", base.HEX)
+add_field(ProtoField.uint32, "FileAttributes", base.HEX)
+add_field(ProtoField.uint32, "ShareAccess", base.HEX)
+add_field(ProtoField.uint32, "CreateDisposition", base.HEX)
+add_field(ProtoField.uint32, "CreateOptions", base.HEX)
+add_field(ProtoField.uint64, "Handle", base.HEX)
+add_field(ProtoField.uint64, "Length")
+add_field(ProtoField.string, "FileData")
 
 -- for type=0x01
 add_field(ProtoField.bytes,  "field1",  "Zeroes")
@@ -242,6 +262,25 @@ function dissect_kd_debug_io(tvb, pinfo, tree)
     end
 end
 
+function dissect_kd_file_io(tvb, pinfo, tree)
+    tree:add_le(hf.ApiNumber, tvb(0, 4))
+    tree:add_le(hf.Status, tvb(4, 4))
+    local api_number = tvb(0, 4):le_uint()
+    if api_number == 0x00003430 then -- DbgKdCreateFileApi
+        tree:add_le(hf.DesiredAccess, tvb(8, 4))
+        tree:add_le(hf.FileAttributes, tvb(12, 4))
+        tree:add_le(hf.ShareAccess, tvb(16, 4))
+        tree:add_le(hf.CreateDisposition, tvb(20, 4))
+        tree:add_le(hf.CreateOptions, tvb(24, 4))
+        tree:add_le(hf.Handle, tvb(24, 8))
+        tree:add_le(hf.Length, tvb(32, 8))
+        if tvb:len() > 64 then
+            -- Observed to be a file path for DbgKdCreateFileApi
+            tree:add_packet_field(hf.FileData, tvb(64), ENC_UTF_16+ENC_LITTLE_ENDIAN)
+        end
+    end
+end
+
 function dissect_kd_header(tvb, pinfo, tree)
     tree:add(hf.signature, tvb(0, 4))
     tree:add_le(hf.packet_type, tvb(4, 2))
@@ -254,8 +293,9 @@ function dissect_kd_header(tvb, pinfo, tree)
         local data_tvb = tvb:range(16, datalen)
         local subtree = tree:add(hf.kd_data, data_tvb)
         local subdissector = ({
-            [2] = dissect_kd_state_manipulate,
-            [3] = dissect_kd_debug_io,
+            [0x0002] = dissect_kd_state_manipulate,
+            [0x0003] = dissect_kd_debug_io,
+            [0x000b] = dissect_kd_file_io,
         })[packet_type]
         if subdissector then
             subdissector(data_tvb, pinfo, subtree)
