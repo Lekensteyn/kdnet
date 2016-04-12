@@ -65,6 +65,13 @@ add_field(ProtoField.uint16, "total_data_length", "Total Data Length", base.DEC)
 add_field(ProtoField.uint32, "packet_id", "Packet ID", base.DEC)
 add_field(ProtoField.uint32, "checksum", "Checksum", base.HEX)
 add_field(ProtoField.bytes,  "kd_data",  "Packet data")
+
+-- MANIPULATE_STATE
+add_field(ProtoField.uint32, "ApiNumber", "ApiNumber", base.HEX)
+add_field(ProtoField.uint16, "ProcessorLevel", "ProcessorLevel", base.HEX_DEC)
+add_field(ProtoField.uint16, "Processor", "Processor", base.HEX_DEC)
+add_field(ProtoField.uint32, "ReturnStatus", "ReturnStatus", base.HEX)
+
 -- for type=0x01
 add_field(ProtoField.bytes,  "field1",  "Zeroes")
 add_field(ProtoField.uint16, "uptime",  "Uptime", base.DEC)
@@ -155,6 +162,13 @@ function dissect_kdnet_data(tvb, pinfo, pkt_type, tree)
     end
 end
 
+function dissect_kd_state_manipulate(tvb, pinfo, tree)
+    tree:add_le(hf.ApiNumber, tvb(0, 4))
+    tree:add_le(hf.ProcessorLevel, tvb(4, 2))
+    tree:add_le(hf.Processor, tvb(6, 2))
+    tree:add_le(hf.ReturnStatus, tvb(8, 4))
+end
+
 function dissect_kd_header(tvb, pinfo, tree)
     tree:add(hf.signature, tvb(0, 4))
     tree:add_le(hf.packet_type, tvb(4, 2))
@@ -163,7 +177,13 @@ function dissect_kd_header(tvb, pinfo, tree)
     tree:add_le(hf.checksum, tvb(12, 4))
     local datalen = tvb(6, 2):le_uint()
     if datalen > 0 then
-        tree:add(hf.kd_data, tvb(16, datalen))
+        local packet_type = tvb(4, 2):le_uint()
+        local data_tvb = tvb:range(16, datalen)
+        local subtree = tree:add(hf.kd_data, data_tvb)
+        if packet_type == 2 then
+            -- KD_STATE_MANIPULATE
+            dissect_kd_state_manipulate(data_tvb, pinfo, subtree)
+        end
     end
 end
 
