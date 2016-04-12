@@ -72,6 +72,14 @@ add_field(ProtoField.uint32, "checksum", "Checksum", base.HEX)
 add_field(ProtoField.bytes,  "kd_data",  "Packet data")
 
 -- from windbgkd.h
+local newstate_values = {
+    -- Wait State Change Types
+    [0x00003030] = "DbgKdMinimumStateChange",
+    [0x00003030] = "DbgKdExceptionStateChange",
+    [0x00003031] = "DbgKdLoadSymbolsStateChange",
+    [0x00003032] = "DbgKdCommandStringStateChange",
+    [0x00003033] = "DbgKdMaximumStateChange",
+}
 local apinumber_values = {
     -- Manipulate Types
     [0x00003130] = "DbgKdReadVirtualMemoryApi",
@@ -126,6 +134,14 @@ local apinumber_values = {
     [0x00003432] = "DbgKdWriteFileApi",
     [0x00003433] = "DbgKdCloseFileApi",
 }
+
+-- DBGKD Structure for Wait State Change
+add_field(ProtoField.uint32, "NewState", base.HEX, newstate_values);
+-- ProcessorLevel
+-- Processor
+add_field(ProtoField.uint32, "NumberProcessors")
+add_field(ProtoField.uint64, "Thread", base.HEX)
+add_field(ProtoField.uint64, "ProgramCounter", base.HEX)
 -- DBGKD Manipulate structure
 add_field(ProtoField.uint32, "ApiNumber", base.HEX, apinumber_values)
 add_field(ProtoField.uint16, "ProcessorLevel", base.HEX_DEC)
@@ -239,6 +255,17 @@ function dissect_kdnet_data(tvb, pinfo, pkt_type, tree)
     end
 end
 
+function dissect_kd_state_change(tvb, pinfo, tree)
+    tree:add_le(hf.NewState, tvb(0, 4))
+    tree:add_le(hf.ProcessorLevel, tvb(4, 2))
+    tree:add_le(hf.Processor, tvb(6, 2))
+    tree:add_le(hf.NumberProcessors, tvb(8, 4))
+    tree:add_le(hf.Thread, tvb(12, 8))
+    tree:add_le(hf.ProgramCounter, tvb(20, 8))
+    -- TODO Exception, LoadSymbols, CommandString
+    -- TODO ControlReport, AnyControlReport
+end
+
 function dissect_kd_state_manipulate(tvb, pinfo, tree)
     tree:add_le(hf.ApiNumber, tvb(0, 4))
     tree:add_le(hf.ProcessorLevel, tvb(4, 2))
@@ -293,8 +320,10 @@ function dissect_kd_header(tvb, pinfo, tree)
         local data_tvb = tvb:range(16, datalen)
         local subtree = tree:add(hf.kd_data, data_tvb)
         local subdissector = ({
+            [0x0001] = dissect_kd_state_change, -- 32
             [0x0002] = dissect_kd_state_manipulate,
             [0x0003] = dissect_kd_debug_io,
+            [0x0007] = dissect_kd_state_change, -- 64
             [0x000b] = dissect_kd_file_io,
         })[packet_type]
         if subdissector then
