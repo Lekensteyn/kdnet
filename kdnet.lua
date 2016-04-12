@@ -66,10 +66,9 @@ add_field(ProtoField.uint32, "packet_id", "Packet ID", base.DEC)
 add_field(ProtoField.uint32, "checksum", "Checksum", base.HEX)
 add_field(ProtoField.bytes,  "kd_data",  "Packet data")
 
--- MANIPULATE_STATE
--- Manipulate Types (from windbgkd.h)
-local manipulate_state_apinumber_values = {
-    [0x00003130] = "DbgKdMinimumManipulate",
+-- from windbgkd.h
+local apinumber_values = {
+    -- Manipulate Types
     [0x00003130] = "DbgKdReadVirtualMemoryApi",
     [0x00003131] = "DbgKdWriteVirtualMemoryApi",
     [0x00003132] = "DbgKdGetContextApi",
@@ -113,12 +112,22 @@ local manipulate_state_apinumber_values = {
     [0x0000315E] = "DbgKdWriteCustomBreakpointApi",
     [0x0000315F] = "DbgKdGetContextExApi",
     [0x00003160] = "DbgKdSetContextExApi",
-    [0x00003161] = "DbgKdMaximumManipulate",
+    -- Debug I/O Types
+    [0x00003230] = "DbgKdPrintStringApi",
+    [0x00003231] = "DbgKdGetStringApi",
 }
-add_field(ProtoField.uint32, "ApiNumber", "ApiNumber", base.HEX, manipulate_state_apinumber_values)
+-- DBGKD Manipulate structure
+add_field(ProtoField.uint32, "ApiNumber", "ApiNumber", base.HEX, apinumber_values)
 add_field(ProtoField.uint16, "ProcessorLevel", "ProcessorLevel", base.HEX_DEC)
 add_field(ProtoField.uint16, "Processor", "Processor", base.HEX_DEC)
 add_field(ProtoField.uint32, "ReturnStatus", "ReturnStatus", base.HEX)
+-- DBGKD Debug I/O structure
+add_field(ProtoField.uint32, "LengthOfString", "LengthOfString")
+add_field(ProtoField.uint32, "LengthOfPromptString", "LengthOfPromptString")
+add_field(ProtoField.uint32, "LengthOfStringRead", "LengthOfStringRead")
+add_field(ProtoField.string, "String", "String")
+add_field(ProtoField.string, "PromptString", "PromptString")
+add_field(ProtoField.string, "StringRead", "StringRead")
 
 -- for type=0x01
 add_field(ProtoField.bytes,  "field1",  "Zeroes")
@@ -217,6 +226,22 @@ function dissect_kd_state_manipulate(tvb, pinfo, tree)
     tree:add_le(hf.ReturnStatus, tvb(8, 4))
 end
 
+function dissect_kd_debug_io(tvb, pinfo, tree)
+    tree:add_le(hf.ApiNumber, tvb(0, 4))
+    tree:add_le(hf.ProcessorLevel, tvb(4, 2))
+    tree:add_le(hf.Processor, tvb(6, 2))
+    local api_number = tvb(0, 4):le_uint()
+    if api_number == 0x00003230 then -- DbgKdPrintStringApi
+        tree:add_le(hf.LengthOfString, tvb(8, 4))
+        tree:add(hf.String, tvb(16, tvb(8, 4):le_uint()))
+    elseif api_number == 0x00003231 then -- DbgKdGetStringApi
+        tree:add_le(hf.LengthOfPromptString, tvb(8, 4))
+        tree:add_le(hf.LengthOfStringRead, tvb(12, 4))
+        tree:add(hf.PromptString, tvb(16, tvb(8, 4):le_uint()))
+        tree:add(hf.StringRead, tvb(16, tvb(12, 4):le_uint()))
+    end
+end
+
 function dissect_kd_header(tvb, pinfo, tree)
     tree:add(hf.signature, tvb(0, 4))
     tree:add_le(hf.packet_type, tvb(4, 2))
@@ -228,9 +253,12 @@ function dissect_kd_header(tvb, pinfo, tree)
         local packet_type = tvb(4, 2):le_uint()
         local data_tvb = tvb:range(16, datalen)
         local subtree = tree:add(hf.kd_data, data_tvb)
-        if packet_type == 2 then
-            -- KD_STATE_MANIPULATE
-            dissect_kd_state_manipulate(data_tvb, pinfo, subtree)
+        local subdissector = ({
+            [2] = dissect_kd_state_manipulate,
+            [3] = dissect_kd_debug_io,
+        })[packet_type]
+        if subdissector then
+            subdissector(data_tvb, pinfo, subtree)
         end
     end
 end
