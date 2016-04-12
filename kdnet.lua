@@ -37,6 +37,16 @@ add_field(ProtoField.bytes, "data",     "Encrypted data")
 add_field(ProtoField.bytes, "data_dec", "Decrypted data")
 
 -- contents of encrypted blocks --
+-- for type=0x00
+add_field(ProtoField.uint8, "tag",      "Tag", base.HEX)
+-- _KD_PACKET_HEADER
+add_field(ProtoField.string, "signature", "Signature")
+add_field(ProtoField.uint16, "packet_type", "Packet Type", base.HEX_DEC)
+add_field(ProtoField.uint16, "total_data_length", "Total Data Length", base.DEC)
+add_field(ProtoField.uint32, "packet_id", "Packet ID", base.DEC)
+add_field(ProtoField.uint32, "checksum", "Checksum", base.HEX)
+add_field(ProtoField.bytes,  "kd_data",  "Packet data")
+-- for type=0x01
 add_field(ProtoField.bytes,  "field1",  "Zeroes")
 add_field(ProtoField.uint16, "uptime",  "Uptime", base.DEC)
 add_field(ProtoField.bytes,  "field2",  "Unknown")
@@ -119,10 +129,41 @@ function dissect_kdnet_data(tvb, pinfo, pkt_type, tree)
     if tvb:raw(0, 5) ~= '\0\0\0\0\0' then
         return
     end
-    if pkt_type == 0x01 then
+    if pkt_type == 0x00 then
+        dissect_kdnet_0x00_data(tvb, pinfo, tree)
+    elseif pkt_type == 0x01 then
         dissect_kdnet_init_data(tvb, pinfo, tree)
     end
 end
+
+function dissect_kd_header(tvb, pinfo, tree, offset)
+    local f_signature = tree:add(hf.signature, tvb(offset, 4))
+    local signature = tvb(offset, 4):string()
+    if signature == "0000" then
+        f_signature:append_text(" (Data packet)")
+    elseif signature == "iiii" then
+        f_signature:append_text(" (Control packet)")
+    else
+        f_signature:append_text(" (Unknown packet)")
+    end
+    tree:add_le(hf.packet_type, tvb(offset + 4, 2))
+    tree:add_le(hf.total_data_length, tvb(offset + 6, 2))
+    tree:add_le(hf.packet_id, tvb(offset + 8, 4))
+    tree:add_le(hf.checksum, tvb(offset + 12, 4))
+    local datalen = tvb(offset + 6, 2):le_uint()
+    if datalen > 0 then
+        tree:add(hf.kd_data, tvb(offset + 16, datalen))
+    end
+end
+
+function dissect_kdnet_0x00_data(tvb, pinfo, tree)
+    tree:add(hf.field1, tvb(0, 5))
+    tree:add(hf.seqno, tvb(5, 2))
+    -- if tag & 0x80, then direction debugger -> debuggee
+    tree:add(hf.tag, tvb(7, 1))
+    dissect_kd_header(tvb, pinfo, tree, 8)
+end
+
 function dissect_kdnet_init_data(tvb, pinfo, tree)
     tree:add(hf.field1, tvb(0, 5))
     tree:add(hf.uptime, tvb(5, 2))
