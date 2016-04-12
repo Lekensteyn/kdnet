@@ -381,12 +381,12 @@ function kdnet_proto.dissector(tvb, pinfo, tree)
     if decryption_key then
         local enc_data = tvb:raw(6)
         local decrypted_bytes = decrypt(decryption_key, enc_data)
-        if pkt_type == 0x01 then
+        local dec_data = ByteArray.new(decrypted_bytes, true)
+            :tvb("Decrypted KDNET data")
+        if pkt_type == 0x01 and dec_data(7, 1):uint() == 0x86 then
             local key = data_key(decryption_key, decrypted_bytes)
             kdnet_stored_key(pinfo, key)
         end
-        local dec_data = ByteArray.new(decrypted_bytes, true)
-            :tvb("Decrypted KDNET data")
         local subtree_dec = subtree:add(hf.data_dec, dec_data())
         dissect_kdnet_data(dec_data, pinfo, pkt_type, subtree_dec)
     end
