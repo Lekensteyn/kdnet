@@ -67,7 +67,55 @@ add_field(ProtoField.uint32, "checksum", "Checksum", base.HEX)
 add_field(ProtoField.bytes,  "kd_data",  "Packet data")
 
 -- MANIPULATE_STATE
-add_field(ProtoField.uint32, "ApiNumber", "ApiNumber", base.HEX)
+-- Manipulate Types (from windbgkd.h)
+local manipulate_state_apinumber_values = {
+    [0x00003130] = "DbgKdMinimumManipulate",
+    [0x00003130] = "DbgKdReadVirtualMemoryApi",
+    [0x00003131] = "DbgKdWriteVirtualMemoryApi",
+    [0x00003132] = "DbgKdGetContextApi",
+    [0x00003133] = "DbgKdSetContextApi",
+    [0x00003134] = "DbgKdWriteBreakPointApi",
+    [0x00003135] = "DbgKdRestoreBreakPointApi",
+    [0x00003136] = "DbgKdContinueApi",
+    [0x00003137] = "DbgKdReadControlSpaceApi",
+    [0x00003138] = "DbgKdWriteControlSpaceApi",
+    [0x00003139] = "DbgKdReadIoSpaceApi",
+    [0x0000313A] = "DbgKdWriteIoSpaceApi",
+    [0x0000313B] = "DbgKdRebootApi",
+    [0x0000313C] = "DbgKdContinueApi2",
+    [0x0000313D] = "DbgKdReadPhysicalMemoryApi",
+    [0x0000313E] = "DbgKdWritePhysicalMemoryApi",
+    [0x0000313F] = "DbgKdQuerySpecialCallsApi",
+    [0x00003140] = "DbgKdSetSpecialCallApi",
+    [0x00003141] = "DbgKdClearSpecialCallsApi",
+    [0x00003142] = "DbgKdSetInternalBreakPointApi",
+    [0x00003143] = "DbgKdGetInternalBreakPointApi",
+    [0x00003144] = "DbgKdReadIoSpaceExtendedApi",
+    [0x00003145] = "DbgKdWriteIoSpaceExtendedApi",
+    [0x00003146] = "DbgKdGetVersionApi",
+    [0x00003147] = "DbgKdWriteBreakPointExApi",
+    [0x00003148] = "DbgKdRestoreBreakPointExApi",
+    [0x00003149] = "DbgKdCauseBugCheckApi",
+    [0x00003150] = "DbgKdSwitchProcessor",
+    [0x00003151] = "DbgKdPageInApi",
+    [0x00003152] = "DbgKdReadMachineSpecificRegister",
+    [0x00003153] = "DbgKdWriteMachineSpecificRegister",
+    [0x00003154] = "OldVlm1",
+    [0x00003155] = "OldVlm2",
+    [0x00003156] = "DbgKdSearchMemoryApi",
+    [0x00003157] = "DbgKdGetBusDataApi",
+    [0x00003158] = "DbgKdSetBusDataApi",
+    [0x00003159] = "DbgKdCheckLowMemoryApi",
+    [0x0000315A] = "DbgKdClearAllInternalBreakpointsApi",
+    [0x0000315B] = "DbgKdFillMemoryApi",
+    [0x0000315C] = "DbgKdQueryMemoryApi",
+    [0x0000315D] = "DbgKdSwitchPartition",
+    [0x0000315E] = "DbgKdWriteCustomBreakpointApi",
+    [0x0000315F] = "DbgKdGetContextExApi",
+    [0x00003160] = "DbgKdSetContextExApi",
+    [0x00003161] = "DbgKdMaximumManipulate",
+}
+add_field(ProtoField.uint32, "ApiNumber", "ApiNumber", base.HEX, manipulate_state_apinumber_values)
 add_field(ProtoField.uint16, "ProcessorLevel", "ProcessorLevel", base.HEX_DEC)
 add_field(ProtoField.uint16, "Processor", "Processor", base.HEX_DEC)
 add_field(ProtoField.uint32, "ReturnStatus", "ReturnStatus", base.HEX)
