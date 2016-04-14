@@ -273,7 +273,7 @@ function dissect_kd_state_manipulate(tvb, pinfo, tree)
     tree:add_le(hf.ReturnStatus, tvb(8, 4))
 end
 
-function dissect_kd_debug_io(tvb, pinfo, tree)
+function dissect_kd_debug_io(tvb, pinfo, tree, from_debugger)
     tree:add_le(hf.ApiNumber, tvb(0, 4))
     tree:add_le(hf.ProcessorLevel, tvb(4, 2))
     tree:add_le(hf.Processor, tvb(6, 2))
@@ -284,8 +284,11 @@ function dissect_kd_debug_io(tvb, pinfo, tree)
     elseif api_number == 0x00003231 then -- DbgKdGetStringApi
         tree:add_le(hf.LengthOfPromptString, tvb(8, 4))
         tree:add_le(hf.LengthOfStringRead, tvb(12, 4))
-        tree:add(hf.PromptString, tvb(16, tvb(8, 4):le_uint()))
-        tree:add(hf.StringRead, tvb(16, tvb(12, 4):le_uint()))
+        if from_debugger then
+            tree:add(hf.StringRead, tvb(16, tvb(12, 4):le_uint()))
+        else
+            tree:add(hf.PromptString, tvb(16, tvb(8, 4):le_uint()))
+        end
     end
 end
 
@@ -308,7 +311,7 @@ function dissect_kd_file_io(tvb, pinfo, tree)
     end
 end
 
-function dissect_kd_header(tvb, pinfo, tree)
+function dissect_kd_header(tvb, pinfo, tree, from_debugger)
     tree:add(hf.signature, tvb(0, 4))
     tree:add_le(hf.packet_type, tvb(4, 2))
     tree:add_le(hf.total_data_length, tvb(6, 2))
@@ -327,7 +330,7 @@ function dissect_kd_header(tvb, pinfo, tree)
             [0x000b] = dissect_kd_file_io,
         })[packet_type]
         if subdissector then
-            subdissector(data_tvb, pinfo, subtree)
+            subdissector(data_tvb, pinfo, subtree, from_debugger)
         end
     end
 end
@@ -337,7 +340,8 @@ function dissect_kdnet_0x00_data(tvb, pinfo, tree)
     tree:add(hf.seqno, tvb(5, 2))
     -- if tag & 0x80, then direction debugger -> debuggee
     tree:add(hf.tag, tvb(7, 1))
-    dissect_kd_header(tvb:range(8), pinfo, tree)
+    local from_debugger = bit.band(tvb(7, 1):uint(), 0x80) ~= 0
+    dissect_kd_header(tvb:range(8), pinfo, tree, from_debugger)
 end
 
 function dissect_kdnet_init_data(tvb, pinfo, tree)
