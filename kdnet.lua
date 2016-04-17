@@ -176,6 +176,12 @@ add_field(ProtoField.uint32, "TransferCount")
 add_field(ProtoField.uint32, "ActualBytesRead")
 add_field(ProtoField.bytes, "blob", "Extra data") -- invented name
 add_field(ProtoField.string, "blob_text", "Extra data") -- invented name
+-- Continue/Continue2
+add_field(ProtoField.uint32, "ContinueStatus", base.HEX, ntstatus_values)
+add_field(ProtoField.uint32, "TraceFlag")
+add_field(ProtoField.uint64, "Dr7", base.HEX)
+add_field(ProtoField.uint64, "CurrentSymbolStart", base.HEX)
+add_field(ProtoField.uint64, "CurrentSymbolEnd", base.HEX)
 -- DBGKD Debug I/O structure
 add_field(ProtoField.uint32, "LengthOfString")
 add_field(ProtoField.uint32, "LengthOfPromptString")
@@ -361,6 +367,17 @@ function dissect_kd_manipulate_ReadMemory(tvb, pinfo, tree, from_debugger, word_
         blob_tree:add_packet_field(hf.blob_text, blob_tvb, ENC_UTF_16+ENC_LITTLE_ENDIAN)
     end
 end
+function dissect_kd_manipulate_Continue(tvb, pinfo, tree, from_debugger, word_size, ret)
+    tree:add_le(hf.ContinueStatus, tvb(0, 4))
+end
+function dissect_kd_manipulate_Continue2(tvb, pinfo, tree, from_debugger, word_size, ret)
+    tree:add_le(hf.ContinueStatus, tvb(0, 4))
+    -- AMD64_DBGKD_CONTROL_SET
+    tree:add_le(hf.TraceFlag,           tvb(0, 4))
+    tree:add_le(hf.Dr7,                 tvb(4, 8))
+    tree:add_le(hf.CurrentSymbolStart,  tvb(12, 8))
+    tree:add_le(hf.CurrentSymbolEnd,    tvb(20, 8))
+end
 
 function dissect_kd_state_manipulate(tvb, pinfo, tree, from_debugger)
     local word_size = 8 -- 4 or 8 (for 32 or 64-bit)
@@ -373,6 +390,8 @@ function dissect_kd_state_manipulate(tvb, pinfo, tree, from_debugger)
     local return_status = tvb(8, 4):le_uint()
     local subdissector = ({
         [0x00003130] = dissect_kd_manipulate_ReadMemory,
+        [0x00003136] = dissect_kd_manipulate_Continue,
+        [0x0000313c] = dissect_kd_manipulate_Continue2,
     })[api_number]
     if subdissector then
         subdissector(tvb(8 + word_size), pinfo, tree, from_debugger, word_size, return_status)
