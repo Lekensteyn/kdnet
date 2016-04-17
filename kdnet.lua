@@ -159,6 +159,12 @@ add_field(ProtoField.uint32, "CheckSum", base.HEX)
 add_field(ProtoField.uint32, "SizeOfImage")
 add_field(ProtoField.bool, "UnloadSymbols")
 add_field(ProtoField.string, "PathName")
+-- (CommandString)
+add_field(ProtoField.uint32, "Flags", base.HEX)
+add_field(ProtoField.uint32, "Reserved1", base.HEX)
+add_field(ProtoField.bytes, "Reserved2")
+add_field(ProtoField.string, "NameString")
+add_field(ProtoField.string, "CommandString")
 -- DBGKD Manipulate structure
 add_field(ProtoField.uint32, "ApiNumber", base.HEX, apinumber_values)
 add_field(ProtoField.uint16, "ProcessorLevel", base.HEX_DEC)
@@ -289,7 +295,7 @@ function dissect_kd_state_change_Exception(tvb, pinfo, tree, from_debugger, word
     tree:add_le(hf.ExceptionInformation, tvb(except_info_offset, word_size * 15))
     tree:add_le(hf.FirstChance, tvb(except_info_offset + word_size * 15, 4))
 end
-function dissect_kd_state_change_LoadSymbols(tvb, pinfo, tree, from_debugger, word_size)
+function dissect_kd_state_change_LoadSymbols(tvb, pinfo, tree, from_debugger, word_size, extradata_offset)
     local offset
     tree:add_le(hf.PathNameLength, tvb(0, 4))
     local path_name_length = tvb(0, 4):le_uint()
@@ -298,11 +304,21 @@ function dissect_kd_state_change_LoadSymbols(tvb, pinfo, tree, from_debugger, wo
     tree:add_le(hf.CheckSum,       tvb(word_size * 3, 4))
     tree:add_le(hf.SizeOfImage,    tvb(word_size * 3 + 4, 4))
     tree:add_le(hf.UnloadSymbols,  tvb(word_size * 3 + 8, 1))
-    -- sizeof(DBGKD_ANY_WAIT_STATE_CHANGE) is sum of largest fields:
-    -- DBGKM_EXCEPTION64(0xa0), followed by AMD64_DBGKD_CONTROL_REPORT(0x30)
-    local extradata_offset = (word_size == 8 and 0xa0 or 0x56) + 0x30
     if path_name_length > 0 then
         tree:add_le(hf.PathName, tvb(extradata_offset, path_name_length))
+    end
+end
+function dissect_kd_state_change_CommandString(tvb, pinfo, tree, from_debugger, word_size, extradata_offset)
+    tree:add(hf.Flags, tvb(0, 4))
+    tree:add(hf.Reserved1, tvb(4, 4))
+    tree:add(hf.Reserved2, tvb(8, 7*8))
+    if tvb:len() > extradata_offset then
+        -- Assume terminating NULs for each string (throw exceptions otherwise).
+        local name_len = #tvb(extradata_offset):stringz()
+        tree:add(hf.NameString, tvb(extradata_offset, name_len))
+        local command_offset = extradata_offset + name_len + 1
+        local command_len = tvb:len() - 1 - command_offset
+        tree:add(hf.CommandString, tvb(command_offset, command_len))
     end
 end
 
@@ -319,14 +335,17 @@ function dissect_kd_state_change(tvb, pinfo, tree)
     offset = offset + word_size
     tree:add_le(hf.ProgramCounter, tvb(offset, word_size))
     offset = offset + word_size
-    -- TODO Exception, LoadSymbols, CommandString
+    -- sizeof(DBGKD_ANY_WAIT_STATE_CHANGE) is sum of largest fields:
+    -- DBGKM_EXCEPTION64(0xa0), followed by AMD64_DBGKD_CONTROL_REPORT(0x30)
+    local extradata_offset = (word_size == 8 and 0xa0 or 0x56) + 0x30
     -- TODO ControlReport, AnyControlReport
     local subdissector = ({
         [0x00003030] = dissect_kd_state_change_Exception,
         [0x00003031] = dissect_kd_state_change_LoadSymbols,
+        [0x00003032] = dissect_kd_state_change_CommandString,
     })[new_state]
     if subdissector then
-        subdissector(tvb(offset), pinfo, tree, from_debugger, word_size)
+        subdissector(tvb(offset), pinfo, tree, from_debugger, word_size, extradata_offset)
     end
 end
 
