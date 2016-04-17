@@ -211,8 +211,8 @@ add_field(ProtoField.uint32, "ReturnStatus", base.HEX, ntstatus_values)
 add_field(ProtoField.uint64, "TargetBaseAddress", base.HEX)
 add_field(ProtoField.uint32, "TransferCount")
 add_field(ProtoField.uint32, "ActualBytesRead")
+add_field(ProtoField.uint32, "ActualBytesWritten")
 add_field(ProtoField.bytes, "blob", "Extra data") -- invented name
-add_field(ProtoField.string, "blob_text", "Extra data") -- invented name
 -- GetContext/SetContext
 add_field(ProtoField.uint64, "Offset")
 add_field(ProtoField.uint32, "ByteCount")
@@ -419,9 +419,16 @@ function dissect_kd_manipulate_ReadMemory(tvb, pinfo, tree, from_debugger, word_
     tree:add_le(hf.ActualBytesRead,   tvb(word_size + 4, 4))
     if not from_debugger and tvb:len() > extradata_offset then
         local actual_bytes_read = tvb(word_size + 4, 4):le_uint()
-        local blob_tvb = tvb(10*4, actual_bytes_read)
-        local blob_tree = tree:add_le(hf.blob, blob_tvb)
-        blob_tree:add_packet_field(hf.blob_text, blob_tvb, ENC_UTF_16+ENC_LITTLE_ENDIAN)
+        tree:add_le(hf.blob, tvb(extradata_offset, actual_bytes_read))
+    end
+end
+function dissect_kd_manipulate_WriteMemory(tvb, pinfo, tree, from_debugger, word_size, extradata_offset)
+    tree:add_le(hf.TargetBaseAddress, tvb(0, word_size))
+    tree:add_le(hf.TransferCount,     tvb(word_size, 4))
+    tree:add_le(hf.ActualBytesWritten, tvb(word_size + 4, 4))
+    if from_debugger and tvb:len() > extradata_offset then
+        local transfer_count = tvb(word_size, 4):le_uint()
+        tree:add_le(hf.blob, tvb(extradata_offset, transfer_count))
     end
 end
 function dissect_kd_manipulate_GetContext(tvb, pinfo, tree, from_debugger, word_size, extradata_offset)
@@ -442,6 +449,8 @@ end
 function dissect_kd_manipulate_Continue(tvb, pinfo, tree, from_debugger, word_size, extradata_offset)
     tree:add_le(hf.ContinueStatus, tvb(0, 4))
 end
+local dissect_kd_manipulate_ReadControlSpace = dissect_kd_manipulate_ReadMemory
+local dissect_kd_manipulate_WriteControlSpace = dissect_kd_manipulate_WriteMemory
 function dissect_kd_manipulate_Continue2(tvb, pinfo, tree, from_debugger, word_size, extradata_offset)
     tree:add_le(hf.ContinueStatus, tvb(0, 4))
     -- AMD64_DBGKD_CONTROL_SET
@@ -459,13 +468,16 @@ function dissect_kd_state_manipulate(tvb, pinfo, tree, from_debugger)
     tree:add_le(hf.ProcessorLevel, tvb(4, 2))
     tree:add_le(hf.Processor, tvb(6, 2))
     tree:add_le(hf.ReturnStatus, tvb(8, 4))
-    -- TODO is sizeof(DBGKD_MANIPULATE_STATE32)==0x20 too?
-    local extradata_offset = word_size == 8 and 0x20 or 0x20
+    -- TODO is sizeof(DBGKD_MANIPULATE_STATE32)==0x28 too?
+    local extradata_offset = word_size == 8 and 0x28 or 0x28
     local subdissector = ({
         [0x00003130] = dissect_kd_manipulate_ReadMemory,
+        [0x00003131] = dissect_kd_manipulate_WriteMemory,
         [0x00003132] = dissect_kd_manipulate_GetContext,
         [0x00003133] = dissect_kd_manipulate_SetContext,
         [0x00003136] = dissect_kd_manipulate_Continue,
+        [0x00003137] = dissect_kd_manipulate_ReadControlSpace,
+        [0x00003138] = dissect_kd_manipulate_WriteControlSpace,
         [0x0000313c] = dissect_kd_manipulate_Continue2,
         [0x0000315f] = dissect_kd_manipulate_GetContextEx,
     })[api_number]
