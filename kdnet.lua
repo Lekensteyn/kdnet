@@ -145,6 +145,12 @@ add_field(ProtoField.uint32, "ApiNumber", base.HEX, apinumber_values)
 add_field(ProtoField.uint16, "ProcessorLevel", base.HEX_DEC)
 add_field(ProtoField.uint16, "Processor", base.HEX_DEC)
 add_field(ProtoField.uint32, "ReturnStatus", base.HEX)
+-- DBGKD Manipulate continued
+add_field(ProtoField.uint64, "TargetBaseAddress", base.HEX)
+add_field(ProtoField.uint32, "TransferCount")
+add_field(ProtoField.uint32, "ActualBytesRead")
+add_field(ProtoField.bytes, "blob", "Extra data") -- invented name
+add_field(ProtoField.string, "blob_text", "Extra data") -- invented name
 -- DBGKD Debug I/O structure
 add_field(ProtoField.uint32, "LengthOfString")
 add_field(ProtoField.uint32, "LengthOfPromptString")
@@ -265,12 +271,34 @@ function dissect_kd_state_change(tvb, pinfo, tree)
     -- TODO ControlReport, AnyControlReport
 end
 
-function dissect_kd_state_manipulate(tvb, pinfo, tree)
+-- Manipulate API dissections
+function dissect_kd_manipulate_ReadMemory(tvb, pinfo, tree, from_debugger, ret)
+    local base_addr_size = 8 -- 4 or 8 (for 32 or 64-bit)
+    tree:add_le(hf.TargetBaseAddress, tvb(0, base_addr_size))
+    tree:add_le(hf.TransferCount,     tvb(base_addr_size, 4))
+    tree:add_le(hf.ActualBytesRead,   tvb(base_addr_size + 4, 4))
+    if not from_debugger and ret == 0 then
+        local actual_bytes_read = tvb(base_addr_size + 4, 4):le_uint()
+        local blob_tvb = tvb(11*4, actual_bytes_read)
+        local blob_tree = tree:add_le(hf.blob, blob_tvb)
+        blob_tree:add_packet_field(hf.blob_text, blob_tvb, ENC_UTF_16+ENC_LITTLE_ENDIAN)
+    end
+end
+
+function dissect_kd_state_manipulate(tvb, pinfo, tree, from_debugger)
     tree:add_le(hf.ApiNumber, tvb(0, 4))
-    pinfo.cols.info:set(apinumber_values[tvb(0, 4):le_uint()] or "")
+    local api_number = tvb(0, 4):le_uint()
+    pinfo.cols.info:set(apinumber_values[api_number] or "")
     tree:add_le(hf.ProcessorLevel, tvb(4, 2))
     tree:add_le(hf.Processor, tvb(6, 2))
     tree:add_le(hf.ReturnStatus, tvb(8, 4))
+    local return_status = tvb(8, 4):le_uint()
+    local subdissector = ({
+        [0x00003130] = dissect_kd_manipulate_ReadMemory,
+    })[api_number]
+    if subdissector then
+        subdissector(tvb(12), pinfo, tree, from_debugger, return_status)
+    end
 end
 
 function dissect_kd_debug_io(tvb, pinfo, tree, from_debugger)
