@@ -239,6 +239,8 @@ add_field(ProtoField.uint32, "TraceFlag")
 add_field(ProtoField.uint64, "Dr7", base.HEX)
 add_field(ProtoField.uint64, "CurrentSymbolStart", base.HEX)
 add_field(ProtoField.uint64, "CurrentSymbolEnd", base.HEX)
+-- RestoreBreakpoint
+add_field(ProtoField.uint32, "BreakPointHandle")
 -- DBGKD Debug I/O structure
 add_field(ProtoField.uint32, "LengthOfString")
 add_field(ProtoField.uint32, "LengthOfPromptString")
@@ -446,6 +448,9 @@ function dissect_kd_manipulate_GetContextEx(tvb, pinfo, tree, from_debugger, wor
             {tvb(0, 4):le_uint(), tvb(8, 4):le_uint()})
     end
 end
+function dissect_kd_manipulate_RestoreBreakpoint(tvb, pinfo, tree, from_debugger, word_size, extradata_offset)
+    tree:add_le(hf.BreakPointHandle, tvb(0, 4))
+end
 function dissect_kd_manipulate_Continue(tvb, pinfo, tree, from_debugger, word_size, extradata_offset)
     tree:add_le(hf.ContinueStatus, tvb(0, 4))
 end
@@ -475,6 +480,7 @@ function dissect_kd_state_manipulate(tvb, pinfo, tree, from_debugger)
         [0x00003131] = dissect_kd_manipulate_WriteMemory,
         [0x00003132] = dissect_kd_manipulate_GetContext,
         [0x00003133] = dissect_kd_manipulate_SetContext,
+        [0x00003135] = dissect_kd_manipulate_RestoreBreakpoint,
         [0x00003136] = dissect_kd_manipulate_Continue,
         [0x00003137] = dissect_kd_manipulate_ReadControlSpace,
         [0x00003138] = dissect_kd_manipulate_WriteControlSpace,
