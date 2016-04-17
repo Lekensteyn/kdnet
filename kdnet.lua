@@ -373,6 +373,7 @@ function dissect_kdnet_0x00_data(tvb, pinfo, tree)
     tree:add(hf.tag, tvb(7, 1))
     local from_debugger = bit.band(tvb(7, 1):uint(), 0x80) ~= 0
     dissect_kd_header(tvb:range(8), pinfo, tree, from_debugger)
+    pinfo.cols.info:prepend(from_debugger and "<" or ">")
 end
 
 function dissect_kdnet_init_data(tvb, pinfo, tree)
