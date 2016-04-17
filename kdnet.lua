@@ -350,20 +350,20 @@ function dissect_kd_state_change(tvb, pinfo, tree)
 end
 
 -- Manipulate API dissections
-function dissect_kd_manipulate_ReadMemory(tvb, pinfo, tree, from_debugger, ret)
-    local base_addr_size = 8 -- 4 or 8 (for 32 or 64-bit)
-    tree:add_le(hf.TargetBaseAddress, tvb(0, base_addr_size))
-    tree:add_le(hf.TransferCount,     tvb(base_addr_size, 4))
-    tree:add_le(hf.ActualBytesRead,   tvb(base_addr_size + 4, 4))
+function dissect_kd_manipulate_ReadMemory(tvb, pinfo, tree, from_debugger, word_size, ret)
+    tree:add_le(hf.TargetBaseAddress, tvb(0, word_size))
+    tree:add_le(hf.TransferCount,     tvb(word_size, 4))
+    tree:add_le(hf.ActualBytesRead,   tvb(word_size + 4, 4))
     if not from_debugger and ret == 0 then
-        local actual_bytes_read = tvb(base_addr_size + 4, 4):le_uint()
-        local blob_tvb = tvb(11*4, actual_bytes_read)
+        local actual_bytes_read = tvb(word_size + 4, 4):le_uint()
+        local blob_tvb = tvb(10*4, actual_bytes_read)
         local blob_tree = tree:add_le(hf.blob, blob_tvb)
         blob_tree:add_packet_field(hf.blob_text, blob_tvb, ENC_UTF_16+ENC_LITTLE_ENDIAN)
     end
 end
 
 function dissect_kd_state_manipulate(tvb, pinfo, tree, from_debugger)
+    local word_size = 8 -- 4 or 8 (for 32 or 64-bit)
     tree:add_le(hf.ApiNumber, tvb(0, 4))
     local api_number = tvb(0, 4):le_uint()
     pinfo.cols.info:set(apinumber_values[api_number] or "")
@@ -375,7 +375,7 @@ function dissect_kd_state_manipulate(tvb, pinfo, tree, from_debugger)
         [0x00003130] = dissect_kd_manipulate_ReadMemory,
     })[api_number]
     if subdissector then
-        subdissector(tvb(12), pinfo, tree, from_debugger, return_status)
+        subdissector(tvb(8 + word_size), pinfo, tree, from_debugger, word_size, return_status)
     end
 end
 
