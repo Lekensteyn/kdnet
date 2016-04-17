@@ -439,15 +439,6 @@ function dissect_kd_manipulate_GetContext(tvb, pinfo, tree, from_debugger, word_
     end
 end
 local dissect_kd_manipulate_SetContext = dissect_kd_manipulate_GetContext
-function dissect_kd_manipulate_GetContextEx(tvb, pinfo, tree, from_debugger, word_size, extradata_offset)
-    tree:add_le(hf.Offset, tvb(0, 4))
-    tree:add_le(hf.ByteCount, tvb(4, 4))
-    tree:add_le(hf.BytesCopied, tvb(8, 4))
-    if tvb:len() > extradata_offset then
-        add_fields_to_tree(context_defs, tvb(extradata_offset), pinfo, tree,
-            {tvb(0, 4):le_uint(), tvb(8, 4):le_uint()})
-    end
-end
 function dissect_kd_manipulate_RestoreBreakpoint(tvb, pinfo, tree, from_debugger, word_size, extradata_offset)
     tree:add_le(hf.BreakPointHandle, tvb(0, 4))
 end
@@ -463,6 +454,15 @@ function dissect_kd_manipulate_Continue2(tvb, pinfo, tree, from_debugger, word_s
     tree:add_le(hf.Dr7,                 tvb(4, 8))
     tree:add_le(hf.CurrentSymbolStart,  tvb(12, 8))
     tree:add_le(hf.CurrentSymbolEnd,    tvb(20, 8))
+end
+function dissect_kd_manipulate_GetContextEx(tvb, pinfo, tree, from_debugger, word_size, extradata_offset)
+    tree:add_le(hf.Offset, tvb(0, 4))
+    tree:add_le(hf.ByteCount, tvb(4, 4))
+    tree:add_le(hf.BytesCopied, tvb(8, 4))
+    if tvb:len() > extradata_offset then
+        add_fields_to_tree(context_defs, tvb(extradata_offset), pinfo, tree,
+            {tvb(0, 4):le_uint(), tvb(8, 4):le_uint()})
+    end
 end
 
 function dissect_kd_state_manipulate(tvb, pinfo, tree, from_debugger)
