@@ -72,15 +72,13 @@ add_field(ProtoField.uint32, "checksum", "Checksum", base.HEX)
 add_field(ProtoField.bytes,  "kd_data",  "Packet data")
 
 -- from windbgkd.h
-local newstate_values = {
+local apinumber_values = {
     -- Wait State Change Types
     [0x00003030] = "DbgKdMinimumStateChange",
     [0x00003030] = "DbgKdExceptionStateChange",
     [0x00003031] = "DbgKdLoadSymbolsStateChange",
     [0x00003032] = "DbgKdCommandStringStateChange",
     [0x00003033] = "DbgKdMaximumStateChange",
-}
-local apinumber_values = {
     -- Manipulate Types
     [0x00003130] = "DbgKdReadVirtualMemoryApi",
     [0x00003131] = "DbgKdWriteVirtualMemoryApi",
@@ -136,7 +134,7 @@ local apinumber_values = {
 }
 
 -- DBGKD Structure for Wait State Change
-add_field(ProtoField.uint32, "NewState", base.HEX, newstate_values);
+add_field(ProtoField.uint32, "NewState", base.HEX, apinumber_values);
 -- ProcessorLevel
 -- Processor
 add_field(ProtoField.uint32, "NumberProcessors")
@@ -257,6 +255,7 @@ end
 
 function dissect_kd_state_change(tvb, pinfo, tree)
     tree:add_le(hf.NewState, tvb(0, 4))
+    pinfo.cols.info:set(apinumber_values[tvb(0, 4):le_uint()] or "")
     tree:add_le(hf.ProcessorLevel, tvb(4, 2))
     tree:add_le(hf.Processor, tvb(6, 2))
     tree:add_le(hf.NumberProcessors, tvb(8, 4))
@@ -268,6 +267,7 @@ end
 
 function dissect_kd_state_manipulate(tvb, pinfo, tree)
     tree:add_le(hf.ApiNumber, tvb(0, 4))
+    pinfo.cols.info:set(apinumber_values[tvb(0, 4):le_uint()] or "")
     tree:add_le(hf.ProcessorLevel, tvb(4, 2))
     tree:add_le(hf.Processor, tvb(6, 2))
     tree:add_le(hf.ReturnStatus, tvb(8, 4))
@@ -275,6 +275,7 @@ end
 
 function dissect_kd_debug_io(tvb, pinfo, tree, from_debugger)
     tree:add_le(hf.ApiNumber, tvb(0, 4))
+    pinfo.cols.info:set(apinumber_values[tvb(0, 4):le_uint()] or "")
     tree:add_le(hf.ProcessorLevel, tvb(4, 2))
     tree:add_le(hf.Processor, tvb(6, 2))
     local api_number = tvb(0, 4):le_uint()
@@ -294,6 +295,7 @@ end
 
 function dissect_kd_file_io(tvb, pinfo, tree)
     tree:add_le(hf.ApiNumber, tvb(0, 4))
+    pinfo.cols.info:set(apinumber_values[tvb(0, 4):le_uint()] or "")
     tree:add_le(hf.Status, tvb(4, 4))
     local api_number = tvb(0, 4):le_uint()
     if api_number == 0x00003430 then -- DbgKdCreateFileApi
@@ -317,6 +319,7 @@ function dissect_kd_header(tvb, pinfo, tree, from_debugger)
     tree:add_le(hf.total_data_length, tvb(6, 2))
     tree:add_le(hf.packet_id, tvb(8, 4))
     tree:add_le(hf.checksum, tvb(12, 4))
+    pinfo.cols.info:set(packet_type_values[tvb(4, 2):le_uint()] or "")
     local datalen = tvb(6, 2):le_uint()
     if datalen > 0 then
         local packet_type = tvb(4, 2):le_uint()
