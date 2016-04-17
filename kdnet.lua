@@ -151,6 +151,14 @@ add_field(ProtoField.uint64, "ExceptionAddress", base.HEX)
 add_field(ProtoField.uint32, "NumberParameters")
 add_field(ProtoField.bytes, "ExceptionInformation")
 add_field(ProtoField.uint32, "FirstChance")
+-- (LoadSymbols)
+add_field(ProtoField.uint32, "PathNameLength")
+add_field(ProtoField.uint64, "BaseOfDll", base.HEX_DEC)
+add_field(ProtoField.uint64, "ProcessId", base.HEX_DEC)
+add_field(ProtoField.uint32, "CheckSum", base.HEX)
+add_field(ProtoField.uint32, "SizeOfImage")
+add_field(ProtoField.bool, "UnloadSymbols")
+add_field(ProtoField.string, "PathName")
 -- DBGKD Manipulate structure
 add_field(ProtoField.uint32, "ApiNumber", base.HEX, apinumber_values)
 add_field(ProtoField.uint16, "ProcessorLevel", base.HEX_DEC)
@@ -281,6 +289,22 @@ function dissect_kd_state_change_Exception(tvb, pinfo, tree, from_debugger, word
     tree:add_le(hf.ExceptionInformation, tvb(except_info_offset, word_size * 15))
     tree:add_le(hf.FirstChance, tvb(except_info_offset + word_size * 15, 4))
 end
+function dissect_kd_state_change_LoadSymbols(tvb, pinfo, tree, from_debugger, word_size)
+    local offset
+    tree:add_le(hf.PathNameLength, tvb(0, 4))
+    local path_name_length = tvb(0, 4):le_uint()
+    tree:add_le(hf.BaseOfDll,      tvb(4, word_size))
+    tree:add_le(hf.ProcessId,      tvb(word_size * 2, word_size))
+    tree:add_le(hf.CheckSum,       tvb(word_size * 3, 4))
+    tree:add_le(hf.SizeOfImage,    tvb(word_size * 3 + 4, 4))
+    tree:add_le(hf.UnloadSymbols,  tvb(word_size * 3 + 8, 1))
+    -- sizeof(DBGKD_ANY_WAIT_STATE_CHANGE) is sum of largest fields:
+    -- DBGKM_EXCEPTION64(0xa0), followed by AMD64_DBGKD_CONTROL_REPORT(0x30)
+    local extradata_offset = (word_size == 8 and 0xa0 or 0x56) + 0x30
+    if path_name_length > 0 then
+        tree:add_le(hf.PathName, tvb(extradata_offset, path_name_length))
+    end
+end
 
 function dissect_kd_state_change(tvb, pinfo, tree)
     local word_size = 8 -- 4 or 8 (for 32 or 64-bit)
@@ -299,6 +323,7 @@ function dissect_kd_state_change(tvb, pinfo, tree)
     -- TODO ControlReport, AnyControlReport
     local subdissector = ({
         [0x00003030] = dissect_kd_state_change_Exception,
+        [0x00003031] = dissect_kd_state_change_LoadSymbols,
     })[new_state]
     if subdissector then
         subdissector(tvb(offset), pinfo, tree, from_debugger, word_size)
