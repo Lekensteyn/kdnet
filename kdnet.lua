@@ -13,6 +13,43 @@ function add_field(proto_field_constructor, name, desc, ...)
         hf[name] = proto_field_constructor(field_name, name, desc, ...)
     end
 end
+-- Convenience function to add many fields at once. The definition list contains
+-- field types followed by (multiple) field names.
+-- Field types are integers, 64 is ULONG64, 16 is USHORT, etc.
+function add_fields(defs)
+    local typemap = {
+        [64] = ProtoField.uint64,
+        [32] = ProtoField.uint32,
+        [16] = ProtoField.uint16,
+    }
+    local field_type, field_args
+    for _, def in ipairs(defs) do
+        if type(def) == "number" then
+            field_type = typemap[def] or ProtoField.bytes
+        elseif type(def) == "table" then
+            field_args = def
+        else
+            add_field(field_type, def, table.unpack(field_args))
+        end
+    end
+end
+function add_fields_to_tree(defs, tvb, pinfo, tree, selection)
+    local size
+    if not selection then selection = {0, tvb:len()} end
+    local offset, buffer_size = -selection[1], selection[2]
+    for _, def in ipairs(defs) do
+        if type(def) == "number" then
+            size = def / 8
+        elseif type(def) == "string" then
+            if offset >= 0 and offset + size <= buffer_size then
+                assert(hf[def], "Unknown field " .. def)
+                tree:add(hf[def], tvb(offset, size))
+            end
+            offset = offset + size
+        end
+    end
+    return offset
+end
 
 -- KD serial protocol?
 -- http://articles.sysprogs.org/kdvmware/kdcom.shtml
@@ -176,6 +213,26 @@ add_field(ProtoField.uint32, "TransferCount")
 add_field(ProtoField.uint32, "ActualBytesRead")
 add_field(ProtoField.bytes, "blob", "Extra data") -- invented name
 add_field(ProtoField.string, "blob_text", "Extra data") -- invented name
+-- GetContext/SetContext
+add_field(ProtoField.uint64, "Offset")
+add_field(ProtoField.uint32, "ByteCount")
+add_field(ProtoField.uint32, "BytesCopied")
+local context_defs = {
+    {base.HEX},
+    64, "P1Home", "P2Home", "P3Home", "P4Home", "P5Home", "P6Home",
+    32, "ContextFlags", "MxCsr",
+    16, "SegCs", "SegDs", "SegEs", "SegFs", "SegGs", "SegSs",
+    32, "EFlags",
+    64, "Dr0", "Dr1", "Dr2", "Dr3", "Dr6", "Dr7",
+    "Rax", "Rcx", "Rdx", "Rbx", "Rsp", "Rbp", "Rsi", "Rdi",
+    "R8", "R9", "R10", "R11", "R12", "R13", "R14", "R15", "Rip",
+    512*8, "XMM", -- XMM_SAVE_AREA32(512*8), XMM(26*128) fields
+    26*128, "VectorRegister",
+    64, "VectorControl", "DebugControl",
+    "LastBranchToRip", "LastBranchFromRip",
+    "LastExceptionToRip", "LastExceptionFromRip",
+}
+add_fields(context_defs)
 -- Continue/Continue2
 add_field(ProtoField.uint32, "ContinueStatus", base.HEX, ntstatus_values)
 add_field(ProtoField.uint32, "TraceFlag")
@@ -356,21 +413,36 @@ function dissect_kd_state_change(tvb, pinfo, tree)
 end
 
 -- Manipulate API dissections
-function dissect_kd_manipulate_ReadMemory(tvb, pinfo, tree, from_debugger, word_size, ret)
+function dissect_kd_manipulate_ReadMemory(tvb, pinfo, tree, from_debugger, word_size, extradata_offset)
     tree:add_le(hf.TargetBaseAddress, tvb(0, word_size))
     tree:add_le(hf.TransferCount,     tvb(word_size, 4))
     tree:add_le(hf.ActualBytesRead,   tvb(word_size + 4, 4))
-    if not from_debugger and ret == 0 then
+    if not from_debugger and tvb:len() > extradata_offset then
         local actual_bytes_read = tvb(word_size + 4, 4):le_uint()
         local blob_tvb = tvb(10*4, actual_bytes_read)
         local blob_tree = tree:add_le(hf.blob, blob_tvb)
         blob_tree:add_packet_field(hf.blob_text, blob_tvb, ENC_UTF_16+ENC_LITTLE_ENDIAN)
     end
 end
-function dissect_kd_manipulate_Continue(tvb, pinfo, tree, from_debugger, word_size, ret)
+function dissect_kd_manipulate_GetContext(tvb, pinfo, tree, from_debugger, word_size, extradata_offset)
+    if tvb:len() > extradata_offset then
+        add_fields_to_tree(context_defs, tvb(extradata_offset), pinfo, tree)
+    end
+end
+local dissect_kd_manipulate_SetContext = dissect_kd_manipulate_GetContext
+function dissect_kd_manipulate_GetContextEx(tvb, pinfo, tree, from_debugger, word_size, extradata_offset)
+    tree:add_le(hf.Offset, tvb(0, 4))
+    tree:add_le(hf.ByteCount, tvb(4, 4))
+    tree:add_le(hf.BytesCopied, tvb(8, 4))
+    if tvb:len() > extradata_offset then
+        add_fields_to_tree(context_defs, tvb(extradata_offset), pinfo, tree,
+            {tvb(0, 4):le_uint(), tvb(8, 4):le_uint()})
+    end
+end
+function dissect_kd_manipulate_Continue(tvb, pinfo, tree, from_debugger, word_size, extradata_offset)
     tree:add_le(hf.ContinueStatus, tvb(0, 4))
 end
-function dissect_kd_manipulate_Continue2(tvb, pinfo, tree, from_debugger, word_size, ret)
+function dissect_kd_manipulate_Continue2(tvb, pinfo, tree, from_debugger, word_size, extradata_offset)
     tree:add_le(hf.ContinueStatus, tvb(0, 4))
     -- AMD64_DBGKD_CONTROL_SET
     tree:add_le(hf.TraceFlag,           tvb(0, 4))
@@ -387,14 +459,18 @@ function dissect_kd_state_manipulate(tvb, pinfo, tree, from_debugger)
     tree:add_le(hf.ProcessorLevel, tvb(4, 2))
     tree:add_le(hf.Processor, tvb(6, 2))
     tree:add_le(hf.ReturnStatus, tvb(8, 4))
-    local return_status = tvb(8, 4):le_uint()
+    -- TODO is sizeof(DBGKD_MANIPULATE_STATE32)==0x20 too?
+    local extradata_offset = word_size == 8 and 0x20 or 0x20
     local subdissector = ({
         [0x00003130] = dissect_kd_manipulate_ReadMemory,
+        [0x00003132] = dissect_kd_manipulate_GetContext,
+        [0x00003133] = dissect_kd_manipulate_SetContext,
         [0x00003136] = dissect_kd_manipulate_Continue,
         [0x0000313c] = dissect_kd_manipulate_Continue2,
+        [0x0000315f] = dissect_kd_manipulate_GetContextEx,
     })[api_number]
     if subdissector then
-        subdissector(tvb(8 + word_size), pinfo, tree, from_debugger, word_size, return_status)
+        subdissector(tvb(8 + word_size), pinfo, tree, from_debugger, word_size, extradata_offset)
     end
 end
 
