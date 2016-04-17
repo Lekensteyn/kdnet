@@ -143,12 +143,20 @@ add_field(ProtoField.uint32, "NewState", base.HEX, apinumber_values);
 add_field(ProtoField.uint32, "NumberProcessors")
 add_field(ProtoField.uint64, "Thread", base.HEX)
 add_field(ProtoField.uint64, "ProgramCounter", base.HEX)
+-- (Exception)
+add_field(ProtoField.int32, "ExceptionCode")
+add_field(ProtoField.uint32, "ExceptionFlags", base.HEX)
+add_field(ProtoField.uint64, "ExceptionRecord", base.HEX)
+add_field(ProtoField.uint64, "ExceptionAddress", base.HEX)
+add_field(ProtoField.uint32, "NumberParameters")
+add_field(ProtoField.bytes, "ExceptionInformation")
+add_field(ProtoField.uint32, "FirstChance")
 -- DBGKD Manipulate structure
 add_field(ProtoField.uint32, "ApiNumber", base.HEX, apinumber_values)
 add_field(ProtoField.uint16, "ProcessorLevel", base.HEX_DEC)
 add_field(ProtoField.uint16, "Processor", base.HEX_DEC)
 add_field(ProtoField.uint32, "ReturnStatus", base.HEX, ntstatus_values)
--- DBGKD Manipulate continued
+-- (ReadMemory/WriteMemory)
 add_field(ProtoField.uint64, "TargetBaseAddress", base.HEX)
 add_field(ProtoField.uint32, "TransferCount")
 add_field(ProtoField.uint32, "ActualBytesRead")
@@ -262,16 +270,39 @@ function dissect_kdnet_data(tvb, pinfo, pkt_type, tree)
     end
 end
 
+-- State Change dissections
+function dissect_kd_state_change_Exception(tvb, pinfo, tree, from_debugger, word_size)
+    tree:add_le(hf.ExceptionCode,    tvb(0, 4))
+    tree:add_le(hf.ExceptionFlags,   tvb(4, 4))
+    tree:add_le(hf.ExceptionRecord,  tvb(8, word_size))
+    tree:add_le(hf.ExceptionAddress, tvb(8 + word_size, word_size))
+    tree:add_le(hf.NumberParameters, tvb(8 + word_size * 2, 4))
+    local except_info_offset = word_size == 8 and 0x20 or 0x16
+    tree:add_le(hf.ExceptionInformation, tvb(except_info_offset, word_size * 15))
+    tree:add_le(hf.FirstChance, tvb(except_info_offset + word_size * 15, 4))
+end
+
 function dissect_kd_state_change(tvb, pinfo, tree)
+    local word_size = 8 -- 4 or 8 (for 32 or 64-bit)
     tree:add_le(hf.NewState, tvb(0, 4))
-    pinfo.cols.info:set(apinumber_values[tvb(0, 4):le_uint()] or "")
+    local new_state = tvb(0, 4):le_uint()
+    pinfo.cols.info:set(apinumber_values[new_state] or "")
     tree:add_le(hf.ProcessorLevel, tvb(4, 2))
     tree:add_le(hf.Processor, tvb(6, 2))
     tree:add_le(hf.NumberProcessors, tvb(8, 4))
-    tree:add_le(hf.Thread, tvb(12, 8))
-    tree:add_le(hf.ProgramCounter, tvb(20, 8))
+    local offset = word_size == 8 and 16 or 12
+    tree:add_le(hf.Thread, tvb(offset, word_size))
+    offset = offset + word_size
+    tree:add_le(hf.ProgramCounter, tvb(offset, word_size))
+    offset = offset + word_size
     -- TODO Exception, LoadSymbols, CommandString
     -- TODO ControlReport, AnyControlReport
+    local subdissector = ({
+        [0x00003030] = dissect_kd_state_change_Exception,
+    })[new_state]
+    if subdissector then
+        subdissector(tvb(offset), pinfo, tree, from_debugger, word_size)
+    end
 end
 
 -- Manipulate API dissections
