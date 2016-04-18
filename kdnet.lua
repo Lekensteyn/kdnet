@@ -212,8 +212,11 @@ add_field(ProtoField.uint64, "TargetBaseAddress", base.HEX)
 add_field(ProtoField.uint32, "TransferCount")
 add_field(ProtoField.uint32, "ActualBytesRead")
 add_field(ProtoField.uint32, "ActualBytesWritten")
+add_field(ProtoField.uint32, "IoAddress", base.HEX)
+add_field(ProtoField.uint32, "DataSize")
+add_field(ProtoField.uint32, "DataValue", base.HEX)
 add_field(ProtoField.bytes, "blob", "Extra data") -- invented name
--- GetContext/SetContext
+-- (GetContext/SetContext)
 add_field(ProtoField.uint64, "Offset")
 add_field(ProtoField.uint32, "ByteCount")
 add_field(ProtoField.uint32, "BytesCopied")
@@ -233,13 +236,13 @@ local context_defs = {
     "LastExceptionToRip", "LastExceptionFromRip",
 }
 add_fields(context_defs)
--- Continue/Continue2
+-- (Continue/Continue2)
 add_field(ProtoField.uint32, "ContinueStatus", base.HEX, ntstatus_values)
 add_field(ProtoField.uint32, "TraceFlag")
 add_field(ProtoField.uint64, "Dr7", base.HEX)
 add_field(ProtoField.uint64, "CurrentSymbolStart", base.HEX)
 add_field(ProtoField.uint64, "CurrentSymbolEnd", base.HEX)
--- RestoreBreakpoint
+-- (RestoreBreakpoint)
 add_field(ProtoField.uint32, "BreakPointHandle")
 -- DBGKD Debug I/O structure
 add_field(ProtoField.uint32, "LengthOfString")
@@ -447,6 +450,12 @@ function dissect_kd_manipulate_Continue(tvb, pinfo, tree, from_debugger, word_si
 end
 local dissect_kd_manipulate_ReadControlSpace = dissect_kd_manipulate_ReadMemory
 local dissect_kd_manipulate_WriteControlSpace = dissect_kd_manipulate_WriteMemory
+function dissect_kd_manipulate_ReadIoSpace(tvb, pinfo, tree, from_debugger, word_size, extradata_offset)
+    tree:add_le(hf.IoAddress, tvb(0, 4))
+    tree:add_le(hf.DataSize,  tvb(4, 4))
+    tree:add_le(hf.DataValue, tvb(8, 4))
+end
+local dissect_kd_manipulate_WriteIoSpace = dissect_kd_manipulate_ReadIoSpace
 function dissect_kd_manipulate_Continue2(tvb, pinfo, tree, from_debugger, word_size, extradata_offset)
     tree:add_le(hf.ContinueStatus, tvb(0, 4))
     -- AMD64_DBGKD_CONTROL_SET
@@ -484,6 +493,8 @@ function dissect_kd_state_manipulate(tvb, pinfo, tree, from_debugger)
         [0x00003136] = dissect_kd_manipulate_Continue,
         [0x00003137] = dissect_kd_manipulate_ReadControlSpace,
         [0x00003138] = dissect_kd_manipulate_WriteControlSpace,
+        [0x00003139] = dissect_kd_manipulate_ReadIoSpace,
+        [0x0000313a] = dissect_kd_manipulate_WriteIoSpace,
         [0x0000313c] = dissect_kd_manipulate_Continue2,
         [0x0000315f] = dissect_kd_manipulate_GetContextEx,
     })[api_number]
