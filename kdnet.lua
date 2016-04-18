@@ -464,6 +464,10 @@ function dissect_kd_manipulate_Continue2(tvb, pinfo, tree, from_debugger, word_s
     tree:add_le(hf.CurrentSymbolStart,  tvb(12, 8))
     tree:add_le(hf.CurrentSymbolEnd,    tvb(20, 8))
 end
+-- TODO ActualBytesRead in request is actually CacheFlags
+local dissect_kd_manipulate_ReadPhysicalMemory = dissect_kd_manipulate_ReadMemory
+-- TODO ActualBytesWritten in request is actually CacheFlags
+local dissect_kd_manipulate_WritePhysicalMemory = dissect_kd_manipulate_WriteMemory
 function dissect_kd_manipulate_GetContextEx(tvb, pinfo, tree, from_debugger, word_size, extradata_offset)
     tree:add_le(hf.Offset, tvb(0, 4))
     tree:add_le(hf.ByteCount, tvb(4, 4))
@@ -496,6 +500,8 @@ function dissect_kd_state_manipulate(tvb, pinfo, tree, from_debugger)
         [0x00003139] = dissect_kd_manipulate_ReadIoSpace,
         [0x0000313a] = dissect_kd_manipulate_WriteIoSpace,
         [0x0000313c] = dissect_kd_manipulate_Continue2,
+        [0x0000313d] = dissect_kd_manipulate_ReadPhysicalMemory,
+        [0x0000313e] = dissect_kd_manipulate_WritePhysicalMemory,
         [0x0000315f] = dissect_kd_manipulate_GetContextEx,
     })[api_number]
     if subdissector then
