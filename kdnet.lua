@@ -14,21 +14,24 @@ function add_field(proto_field_constructor, name, desc, ...)
     end
 end
 -- Convenience function to add many fields at once. The definition list contains
--- field types followed by (multiple) field names.
+-- field types followed by (multiple) field names. An empty string can be used
+-- for alignment.
 -- Field types are integers, 64 is ULONG64, 16 is USHORT, etc.
 function add_fields(defs)
     local typemap = {
         [64] = ProtoField.uint64,
         [32] = ProtoField.uint32,
         [16] = ProtoField.uint16,
+        [8] = ProtoField.uint8,
     }
-    local field_type, field_args
+    local field_type
+    local field_args = {}
     for _, def in ipairs(defs) do
         if type(def) == "number" then
             field_type = typemap[def] or ProtoField.bytes
         elseif type(def) == "table" then
             field_args = def
-        else
+        elseif #def > 0 then
             add_field(field_type, def, table.unpack(field_args))
         end
     end
@@ -41,7 +44,7 @@ function add_fields_to_tree(defs, tvb, pinfo, tree, selection)
         if type(def) == "number" then
             size = def / 8
         elseif type(def) == "string" then
-            if offset >= 0 and offset + size <= buffer_size then
+            if #def > 0 and offset >= 0 and offset + size <= buffer_size then
                 assert(hf[def], "Unknown field " .. def)
                 tree:add(hf[def], tvb(offset, size))
             end
@@ -244,6 +247,20 @@ add_field(ProtoField.uint64, "CurrentSymbolStart", base.HEX)
 add_field(ProtoField.uint64, "CurrentSymbolEnd", base.HEX)
 -- (RestoreBreakpoint)
 add_field(ProtoField.uint32, "BreakPointHandle")
+-- (GetVersion, DBGKD_GET_VERSION64)
+local get_version64_defs = {
+    16, "MajorVersion", "MinorVersion",
+    8, "ProtocolVersion", "KdSecondaryVersion",
+    {base.HEX},
+    16, "version_Flags", "MachineType",
+    {},
+    8, "MaxPacketType", "MaxStateChange", "MaxManipulate", "Simulation",
+    16, "",
+    {base.HEX},
+    64, "KernBase", "PsLoadedModuleList", "DebuggerDataList",
+
+}
+add_fields(get_version64_defs)
 -- DBGKD Debug I/O structure
 add_field(ProtoField.uint32, "LengthOfString")
 add_field(ProtoField.uint32, "LengthOfPromptString")
@@ -468,6 +485,11 @@ end
 local dissect_kd_manipulate_ReadPhysicalMemory = dissect_kd_manipulate_ReadMemory
 -- TODO ActualBytesWritten in request is actually CacheFlags
 local dissect_kd_manipulate_WritePhysicalMemory = dissect_kd_manipulate_WriteMemory
+function dissect_kd_manipulate_GetVersion(tvb, pinfo, tree, from_debugger, word_size, extradata_offset)
+    if not from_debugger then
+        add_fields_to_tree(get_version64_defs, tvb, pinfo, tree)
+    end
+end
 function dissect_kd_manipulate_GetContextEx(tvb, pinfo, tree, from_debugger, word_size, extradata_offset)
     tree:add_le(hf.Offset, tvb(0, 4))
     tree:add_le(hf.ByteCount, tvb(4, 4))
@@ -502,6 +524,7 @@ function dissect_kd_state_manipulate(tvb, pinfo, tree, from_debugger)
         [0x0000313c] = dissect_kd_manipulate_Continue2,
         [0x0000313d] = dissect_kd_manipulate_ReadPhysicalMemory,
         [0x0000313e] = dissect_kd_manipulate_WritePhysicalMemory,
+        [0x00003146] = dissect_kd_manipulate_GetVersion,
         [0x0000315f] = dissect_kd_manipulate_GetContextEx,
     })[api_number]
     if subdissector then
