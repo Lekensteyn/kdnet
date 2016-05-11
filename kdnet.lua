@@ -83,6 +83,7 @@ add_field(ProtoField.bytes, "data_dec", "Decrypted data")
 
 -- contents of encrypted blocks --
 -- for type=0x00
+add_field(ProtoField.uint32, "seqno",  "Seq no", base.HEX_DEC)
 add_field(ProtoField.uint8, "tag",      "Tag", base.HEX)
 -- _KD_PACKET_HEADER
 local signature_values = {
@@ -284,7 +285,7 @@ add_field(ProtoField.bytes,  "field1",  "Zeroes")
 add_field(ProtoField.uint16, "uptime",  "Uptime", base.DEC)
 add_field(ProtoField.bytes,  "field2",  "Unknown")
 add_field(ProtoField.bytes,  "field3",  "Unknown (begin key material)")
-add_field(ProtoField.uint16, "seqno",   "Seq no", base.HEX_DEC)
+add_field(ProtoField.uint32, "seqno2",  "Seq no", base.HEX_DEC)
 add_field(ProtoField.bytes,  "random",  "Random")
 add_field(ProtoField.ipv6,   "src_addr", "Source Addr")
 add_field(ProtoField.uint16, "src_port", "Source Port", base.DEC)
@@ -359,7 +360,7 @@ function kdnet_stored_key(pinfo, new_key)
 end
 
 function dissect_kdnet_data(tvb, pinfo, pkt_type, tree)
-    if tvb:raw(0, 5) ~= '\0\0\0\0\0' then
+    if tvb:raw(0, 3) ~= '\0\0\0' then
         return
     end
     if pkt_type == 0x00 then
@@ -598,8 +599,8 @@ function dissect_kd_header(tvb, pinfo, tree, from_debugger)
 end
 
 function dissect_kdnet_0x00_data(tvb, pinfo, tree)
-    tree:add(hf.field1, tvb(0, 5))
-    tree:add(hf.seqno, tvb(5, 2))
+    tree:add(hf.field1, tvb(0, 3))
+    tree:add(hf.seqno, tvb(3, 4))
     -- if tag & 0x80, then direction debugger -> debuggee
     tree:add(hf.tag, tvb(7, 1))
     local from_debugger = bit.band(tvb(7, 1):uint(), 0x80) ~= 0
@@ -608,11 +609,14 @@ function dissect_kdnet_0x00_data(tvb, pinfo, tree)
 end
 
 function dissect_kdnet_init_data(tvb, pinfo, tree)
-    tree:add(hf.field1, tvb(0, 5))
-    tree:add(hf.uptime, tvb(5, 2))
+    tree:add(hf.field1, tvb(0, 3))
+    tree:add(hf.uptime, tvb(3, 4))
     tree:add(hf.field2, tvb(7, 2))
     tree:add(hf.field3, tvb(9, 1))
-    tree:add(hf.seqno, tvb(10, 2))
+    -- Possibly as session identifier? The debuggee keeps sending these packets
+    -- (with kdnet.field==0x0001, kdnet.field3==0x01), at some point debugger
+    -- sends kdnet.field==0x8601, kdnet.field3==0x02 with presumably key data.
+    tree:add_le(hf.seqno2, tvb(10, 2))
     tree:add(hf.random, tvb(12, 30))
     tree:add(hf.src_addr, tvb(42, 16))
     tree:add(hf.src_port, tvb(58, 2))
