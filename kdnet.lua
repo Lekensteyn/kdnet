@@ -233,8 +233,10 @@ local context_defs = {
     64, "Dr0", "Dr1", "Dr2", "Dr3", "Dr6", "Dr7",
     "Rax", "Rcx", "Rdx", "Rbx", "Rsp", "Rbp", "Rsi", "Rdi",
     "R8", "R9", "R10", "R11", "R12", "R13", "R14", "R15", "Rip",
+    {},
     512*8, "XMM", -- XMM_SAVE_AREA32(512*8), XMM(26*128) fields
     26*128, "VectorRegister",
+    {base.HEX},
     64, "VectorControl", "DebugControl",
     "LastBranchToRip", "LastBranchFromRip",
     "LastExceptionToRip", "LastExceptionFromRip",
